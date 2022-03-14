@@ -33,15 +33,16 @@ def save_model(save_name, iter, model_state_dict, optimizer, scheduler):
     torch.save(checkpoint, "./saved_model/" + save_name + ".pt")
 
 class Train:
-    def __init__(self, device):
-        self.device = device
+    def __init__(self):
+        self.device = "cuda"
         self.n_mels = N_MELS
         self.n_notes = 44
-        self.model = AR_Transcriber(N_MELS, self.n_notes, 48, 32, device).to(device)
+        self.model = AR_Transcriber(N_MELS, self.n_notes, 48, 32, self.device).to(self.device)
+        self.symmetric = True
         self.model_name = "tf_07_1_symmetric/"
         self.mode = ""
         self.ckpt = "5"
-        self.data_folder = "data/spec_repr/m_1_512/"
+        self.data_folder = "data/spec_repr/m_3_256/"
         self.fold = "05"
 
     def get_pairs(self):
@@ -61,7 +62,7 @@ class Train:
 
     def eval_model(self):
 
-        metrics, loss = evaluate(self.data_folder, self.fold, self.model, self.device)
+        metrics, loss = evaluate(self.data_folder, self.fold, self.model, self.symmetric, self.device)
         f1on = metrics[2]
         f1off = metrics[5]
         f1f = metrics[6]
@@ -72,7 +73,7 @@ class Train:
         target_length = target_tensor.size(1)
         loss = 0
         optimizer.zero_grad()
-        output = self.model(input_tensor, target_tensor, symmetric=True)
+        output = self.model(input_tensor, target_tensor, symmetric=self.symmetric)
 
         for t in range(target_length):
             for note in range(self.n_notes):
@@ -112,8 +113,8 @@ class Train:
             prev_iters = ckpt["epoch"]
 
         for iter in range(1, n_iters + 1):
-            n_frames = 360
-            n_context = 2
+            n_frames = 600
+            n_context = np.sum(PADS)
             input_tensor = torch.zeros((batch_size, n_frames + n_context, self.n_mels)) # Because of (3,3) paddding
             target_tensor = torch.zeros((batch_size, n_frames, self.n_notes), dtype=torch.long)
             for i in range(batch_size):
@@ -153,4 +154,4 @@ class Train:
 
 
 train_module = Train()
-Train.trainIters(n_iters=15000, print_every=1000)
+train_module.trainIters(n_iters=15000, print_every=1000)

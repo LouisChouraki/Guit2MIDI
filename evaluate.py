@@ -118,7 +118,7 @@ def notes_to_frames_pred(pitches, intervals, shape):
     freqs = [roll[t, :].nonzero()[0] for t in time]
     return time, freqs
 
-def evaluate(path, fold, model, device, save_path=None):
+def evaluate(path, fold, model, symmetry, device, save_path=None):
     metrics = defaultdict(list)
     MIN_MIDI = 40
     files = get_fold(fold)
@@ -133,7 +133,7 @@ def evaluate(path, fold, model, device, save_path=None):
         input = data["repr"]
         target = torch.from_numpy(data["labels"]).unsqueeze(0).long().to(device)
         with torch.no_grad():
-            output = model(torch.from_numpy(input).unsqueeze(0).float().to(device), symmetric=True)
+            output = model(torch.from_numpy(input).unsqueeze(0).float().to(device), symmetric=symmetry)
             file_len = target.shape[1]
             total_len += file_len
             for t in range(file_len):
@@ -152,7 +152,6 @@ def evaluate(path, fold, model, device, save_path=None):
 
         t_ref, f_ref = notes_to_frames_ref(ref, output.shape, scaling)
         t_est, f_est = notes_to_frames_pred(p_est, i_est, output.shape)
-
 
 
         p_ref = np.array([midi_to_hz(midi) for midi in p_ref])
