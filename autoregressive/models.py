@@ -15,13 +15,13 @@ class ConvStack(nn.Module):
         # input is batch_size * 1 channel * frames * input_features
         self.cnn = nn.Sequential(
             # layer 0
-            nn.Conv2d(1, output_features // 16, (3, 3), padding=(1,1)),
+            nn.Conv2d(1, output_features // 16, (3, 3), padding=(0,1)),
             nn.BatchNorm2d(output_features // 16),
             nn.ReLU(),
             # layer 1
 
             nn.Conv2d(output_features // 16, output_features //
-                      16, (3, 3), padding=(1,1)),
+                      16, (3, 3), padding=(0,1)),
             nn.BatchNorm2d(output_features // 16),
             nn.ReLU(),
             # layer 2
@@ -108,7 +108,7 @@ class AR_Transcriber(nn.Module):
             result, _ = self.language_model(concated_data)  # [1, 640, 1536], [1, 1, 1536], [1, 1, 1536]
             total_result = self.language_post(result).view(mel.shape[0], -1, self.output_features, 5)  # [1, 640, 88, 5]
         else:
-            h, c = self.init_lstm_hidden(mel.shape[0], self.device)
+            h, c = self.init_lstm_hidden(mel.shape[0])
             prev_out = torch.zeros((mel.shape[0], 1, self.output_features * 2)).to(self.device)
             total_result = torch.zeros((acoustic_out.shape[0], acoustic_out.shape[1], self.output_features, 5)).to(self.device)
             for i in range(acoustic_out.shape[1]):
