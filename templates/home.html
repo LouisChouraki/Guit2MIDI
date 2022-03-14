@@ -15,7 +15,7 @@
   var height = window.innerHeight
   c.width = window.innerWidth
   c.height = window.innerHeight
-  var pitch_height = height/88;
+  var pitch_height = height/44;
   var height_margin = pitch_height/6;
   var max_length = window.innerWidth
 
@@ -36,7 +36,7 @@
 //          console.log(data.transcription_result['on'])
 //        }
         for (i = 0; i < data.on.length; i++) {
-          var rect = [width, (88-data.on[i]) * pitch_height , 4, pitch_height - height_margin, data.on[i], 0];
+          var rect = [width, (44-data.on[i]) * pitch_height , 4, pitch_height - height_margin, data.on[i], 0];
           // x pos, y pos, width, hieght, pitch, offset_found
           rectangles.push(rect)
           // console.log('on loop', i, data.on)
@@ -101,7 +101,7 @@
     height = window.innerHeight
     c.width = window.innerWidth
     c.height = window.innerHeight
-    pitch_height = height/88;
+    pitch_height = height/44;
     height_margin = pitch_height/6;
     max_length = width / 6
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);

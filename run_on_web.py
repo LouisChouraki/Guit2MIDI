@@ -20,7 +20,7 @@ Q = queue.Queue()
 def home():
     # args = Args()
     # model = load_model(args)
-    model = load_model('saved_model/tf_07_2_context/ckpt_14.pt')
+    model = load_model('saved_model/tf_07_3_asymmetric/ckpt_15.pt')
     global Q
     t1 = Thread(target=get_buffer_and_transcribe, name=get_buffer_and_transcribe, args=(model, Q))
     t1.start()
@@ -38,7 +38,7 @@ def amt():
     return jsonify(on=onsets, off=offsets)
 
 def get_buffer_and_transcribe(model, q):
-    CHUNK = 256
+    CHUNK = 512
     FORMAT = pyaudio.paInt16
     CHANNELS = pyaudio.PyAudio().get_default_input_device_info()['maxInputChannels']
     RATE = 16000
@@ -71,6 +71,9 @@ def get_buffer_and_transcribe(model, q):
             for pitch in frame_output[1]:
                 note_off = [0x90, pitch + 40, 0]
                 pitch_count = on_pitch.count(pitch)
+                [midiout.send_message(note_off) for i in range(pitch_count)]
+            for pitch in frame_output[2]:
+                note_off = [0x90, pitch + 40, 0]
                 [midiout.send_message(note_off) for i in range(pitch_count)]
             on_pitch = [x for x in on_pitch if x not in frame_output[1]]
             q.put(frame_output)

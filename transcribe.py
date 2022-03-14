@@ -17,6 +17,20 @@ from autoregressive.constants import *
 
 from time import time
 
+
+def ninos(data):
+    thresh = 0.4
+    sparsity = np.zeros(data.shape[1])
+    max_index = int(0.94 * data.shape[0])
+    for i in range(data.shape[1]):
+        temp = np.sort(data[:, i])[:max_index]
+        sparsity[i] = (np.sum(temp ** 2)) / ((max_index ** 0.25) * np.sum(temp ** 4) ** 0.25)
+
+    if sparsity[-1] > np.max(sparsity[:-1]) + thresh:
+            return 1
+    else:
+            return 0
+
 class OnlineTranscriber:
     def __init__(self, model, return_roll=True):
         self.model = model
@@ -28,19 +42,20 @@ class OnlineTranscriber:
         # self.model.melspectrogram = MelSpectrogram(
         #     N_MELS, SAMPLE_RATE, WINDOW_LENGTH, HOP_LENGTH, mel_fmin=MEL_FMIN, mel_fmax=MEL_FMAX)
         self.model.melspectrogram.stft.padding = False
-        self.audio_buffer = th.zeros((1,WINDOW_LENGTH + (2 * N_PADS) * HOP_LENGTH)).to(th.float)
+        self.audio_buffer = th.zeros((1, WINDOW_LENGTH + (np.sum(PADS)) * HOP_LENGTH)).to(th.float)
         self.mel_buffer = torch.from_numpy(librosa.feature.melspectrogram(self.audio_buffer.squeeze().numpy(), sr=16000, n_fft=WINDOW_LENGTH, hop_length=HOP_LENGTH,
                                           power=1, win_length=WINDOW_LENGTH, center=False, htk=True,
                                           n_mels=N_MELS, fmin=MEL_FMIN, fmax=MEL_FMAX)).unsqueeze(0).float()
+        self.mel_buffer = torch.concat((self.mel_buffer, torch.zeros((1, 229, 3))), dim=2)
         self.acoustic_layer_outputs = self.init_acoustic_layer(self.mel_buffer)
-        self.hidden = model.init_lstm_hidden(1, torch.device('cpu'))
+        self.hidden = model.init_lstm_hidden(1)
         # self.hidden = model.init_hidden()
 
         self.prev_output = th.zeros((1,1,44)).to(th.long)
         self.buffer_length = 0
         self.sr = 16000
         self.return_roll = return_roll
-        
+        self.cnt = -1
         self.inten_threshold = 0.05
         self.patience = 100
         self.num_under_thr = 0
@@ -53,13 +68,13 @@ class OnlineTranscriber:
         self.audio_buffer = new_buffer
 
     def update_mel_buffer(self):
-        self.mel_buffer[:,:,:4] = self.mel_buffer[:,:,1:5]
+        self.mel_buffer[:,:,:3] = self.mel_buffer[:,:,1:4]
         new_mel = librosa.feature.melspectrogram(self.audio_buffer[:, -2048:].squeeze().numpy(), sr=16000,
                                                  n_fft=WINDOW_LENGTH, hop_length=HOP_LENGTH,
                                                  power=1, win_length=WINDOW_LENGTH, center=False, htk=True,
                                                  n_mels=N_MELS, fmin=MEL_FMIN, fmax=MEL_FMAX)
         new_mel = np.log10(np.clip(new_mel, a_min=1e-7, a_max=None))
-        self.mel_buffer[:,:,4:] = torch.from_numpy(new_mel).unsqueeze(0).float()
+        self.mel_buffer[:,:,3] = torch.from_numpy(new_mel).float().squeeze(1).unsqueeze(0)
 
     def init_acoustic_layer(self, input_mel):
         x = input_mel.transpose(-1, -2).unsqueeze(1)
@@ -71,6 +86,7 @@ class OnlineTranscriber:
         return acoustic_layer_outputs
 
     def update_acoustic_out(self, mel):
+        """
         x = mel[:,-PADS[0]:,:].unsqueeze(1)
         layers = self.model.acoustic_model.cnn
         for i in range(3):
@@ -85,8 +101,9 @@ class OnlineTranscriber:
         x = self.acoustic_layer_outputs[1]
         for i in range(8,13):
             x = layers[i](x)
-        x = x.transpose(1, 2).flatten(-2)
-        return self.model.acoustic_model.fc(x)
+        x = x.transpose(1, 2).flatten(-2)"""
+
+        return self.model.acoustic_model(mel)
     
     def switch_on_or_off(self):
         pseudo_intensity = torch.max(self.audio_buffer) - torch.min(self.audio_buffer)
@@ -111,6 +128,17 @@ class OnlineTranscriber:
                 else:
                     return [], []
             self.update_mel_buffer()
+            spec = librosa.stft(self.audio_buffer.squeeze().numpy(), n_fft=2048, win_length=2048, hop_length=512, center=False)
+            if ninos(np.abs(spec)) and self.cnt == -1:
+                self.start = time()
+                print("Onset ")
+                self.cnt += 1
+
+            if self.cnt != -1:
+                self.cnt += 1
+            if self.cnt == 10:
+                self.cnt = -1
+
             # time_list.append(time())
             acoustic_out = self.update_acoustic_out(self.mel_buffer.transpose(-1, -2))
             # time_list.append(time())
@@ -126,6 +154,8 @@ class OnlineTranscriber:
             #     time_list[5]-time_list[4],  
             # ))
             out = self.prev_output[0,0,:].numpy()
+            if 1 in out and self.cnt !=-1:
+                print(np.where(out == 1), time() - self.start)
             # print(time() - start)
         if self.return_roll:
             return out
@@ -135,12 +165,13 @@ class OnlineTranscriber:
             # out[out==4]=2
             onset_pitches = np.squeeze(np.argwhere(out == 1)).tolist()
             off_pitches = np.squeeze(np.argwhere(out == 3)).tolist()
+            pseudo_off = np.squeeze(np.argwhere(out == 0)).tolist()
             if isinstance(onset_pitches, int):
                 onset_pitches = [onset_pitches]
             if isinstance(off_pitches, int):
                 off_pitches = [off_pitches]
             # print('after', onset_pitches, off_pitches)
-            return onset_pitches, off_pitches
+            return onset_pitches, off_pitches, pseudo_off
         # return acoustic_out[:,3:4,:].numpy()
 
 
@@ -148,7 +179,7 @@ def load_model(filename):
     parameters = th.load(filename, map_location=th.device('cpu'))
     model = models.AR_Transcriber(229,
                             44,
-                            48, 32)
+                            48, 32, device="cpu")
 
     model.load_state_dict(parameters["state_dict"])
     return model
